@@ -259,8 +259,9 @@
             const rightJoystick = new BABYLON.VirtualJoystick(false);
             rightJoystick.setJoystickColor("cyan");
 
-            const joystickSpeed = 0.08;
-            const lookSpeed = 0.04;
+            // Reduced touch sensitivity for movement and looking
+            const joystickSpeed = 0.04; // lowered from 0.08
+            const lookSpeed = 0.02;     // lowered from 0.04
             
             scene.onBeforeRenderObservable.add(() => {
                 // Movement
@@ -280,10 +281,10 @@
                     camera.position.addInPlace(moveX);
                 }
 
-                // Look Controls (Inversion fixed: -deltaPosition.y)
+                // Look Controls (right stick): normal vertical mapping so dragging UP looks UP
                 if (rightJoystick.pressed) {
                     camera.rotation.y += rightJoystick.deltaPosition.x * lookSpeed;
-                    camera.rotation.x -= rightJoystick.deltaPosition.y * lookSpeed; 
+                    camera.rotation.x += rightJoystick.deltaPosition.y * lookSpeed; 
                     camera.rotation.x = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, camera.rotation.x));
                 }
             });
