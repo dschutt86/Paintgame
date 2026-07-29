@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Faceball Web Prototype</title>
+    <title>Faceball Web - Retro Demo</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <style>
         html, body {
@@ -62,12 +62,58 @@
         const hpEl = document.getElementById("hp");
         const countEl = document.getElementById("enemy-count");
 
+        // --- RETRO SMILOID CANVAS TEXTURE GENERATOR ---
+        function createSmiloidTexture(scene, type) {
+            const dynamicTex = new BABYLON.DynamicTexture(type + "FaceTex", { width: 256, height: 256 }, scene, false);
+            const ctx = dynamicTex.getContext();
+
+            // Base Face Color
+            ctx.fillStyle = type === "Gremlin" ? "#ff3333" : "#33ff33"; // Red for Gremlin, Green for Ishootus
+            ctx.fillRect(0, 0, 256, 256);
+
+            // Black Border around texture mapping
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 12;
+            ctx.strokeRect(6, 6, 244, 244);
+
+            // Face Features
+            ctx.fillStyle = "#000000";
+            if (type === "Gremlin") {
+                // Angry Eyes
+                ctx.beginPath();
+                ctx.moveTo(50, 70); ctx.lineTo(100, 100); ctx.lineTo(50, 110); ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(206, 70); ctx.lineTo(156, 100); ctx.lineTo(206, 110); ctx.fill();
+
+                // Frown Mouth
+                ctx.lineWidth = 14;
+                ctx.beginPath();
+                ctx.arc(128, 190, 50, Math.PI, 0, false);
+                ctx.stroke();
+            } else {
+                // Happy Eyes
+                ctx.beginPath();
+                ctx.arc(80, 85, 20, 0, Math.PI * 2);
+                ctx.arc(176, 85, 20, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Smile Mouth
+                ctx.lineWidth = 14;
+                ctx.beginPath();
+                ctx.arc(128, 140, 60, 0.2 * Math.PI, 0.8 * Math.PI, false);
+                ctx.stroke();
+            }
+
+            dynamicTex.update();
+            return dynamicTex;
+        }
+
         // --- ENEMY CLASS ---
         class Enemy {
             constructor(scene, camera, type, position) {
                 this.scene = scene;
                 this.camera = camera;
-                this.type = type; // "Gremlin" or "Ishootus"
+                this.type = type;
                 this.health = type === "Ishootus" ? 3 : 1;
                 this.isDead = false;
                 this.lastShotTime = 0;
@@ -77,46 +123,44 @@
                 this.mesh.position = position.clone();
                 this.mesh.checkCollisions = true;
 
-                // Visuals based on enemy type
+                // Material with Dynamic Retro Face Texture
                 const mat = new BABYLON.StandardMaterial(type + "Mat", scene);
+                const tex = createSmiloidTexture(scene, type);
+                mat.diffuseTexture = tex;
+                mat.emissiveTexture = tex;
+                mat.emissiveColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+                
+                this.mesh.material = mat;
+                this.mesh.rotation.y = Math.PI; // Face forward initially
+
                 if (type === "Gremlin") {
-                    mat.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2); // Fast Red Enemy
                     this.speed = 0.06;
                 } else if (type === "Ishootus") {
-                    mat.diffuseColor = new BABYLON.Color3(0.2, 1, 0.2); // Green Shooting Enemy
                     this.speed = 0.03;
                 }
-                this.mesh.material = mat;
 
-                // Attach update loop for AI logic
                 this.observer = this.scene.onBeforeRenderObservable.add(() => this.update());
             }
 
             update() {
                 if (this.isDead) return;
 
-                // Calculate vector pointing from enemy to player
                 const playerPos = this.camera.position.clone();
-                playerPos.y = this.mesh.position.y; // Keep movement on horizontal plane
+                playerPos.y = this.mesh.position.y;
                 
                 const direction = playerPos.subtract(this.mesh.position);
                 const distance = direction.length();
                 direction.normalize();
 
-                // Aggro range check (within 16 units)
                 if (distance < 16) {
                     this.mesh.lookAt(this.camera.position);
 
                     if (this.type === "Gremlin") {
-                        // Fast melee enemy runs straight at player
                         this.mesh.position.addInPlace(direction.scale(this.speed));
-                        
-                        // Melee attack range
                         if (distance < 1.2) {
                             damagePlayer(0.5);
                         }
                     } else if (this.type === "Ishootus") {
-                        // Shooter keeps a distance (~7 units) and shoots
                         if (distance > 7) {
                             this.mesh.position.addInPlace(direction.scale(this.speed));
                         }
@@ -219,6 +263,7 @@
             const lookSpeed = 0.04;
             
             scene.onBeforeRenderObservable.add(() => {
+                // Movement
                 if (leftJoystick.pressed) {
                     const forward = camera.getDirection(BABYLON.Vector3.Forward());
                     const right = camera.getDirection(BABYLON.Vector3.Right());
@@ -235,12 +280,39 @@
                     camera.position.addInPlace(moveX);
                 }
 
+                // Look Controls (Inversion fixed: -deltaPosition.y)
                 if (rightJoystick.pressed) {
                     camera.rotation.y += rightJoystick.deltaPosition.x * lookSpeed;
-                    camera.rotation.x += rightJoystick.deltaPosition.y * lookSpeed;
+                    camera.rotation.x -= rightJoystick.deltaPosition.y * lookSpeed; 
                     camera.rotation.x = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, camera.rotation.x));
                 }
             });
+
+            // --- RETRO GRID WALL MATERIAL ---
+            const wallTexture = new BABYLON.DynamicTexture("wallTex", { width: 256, height: 256 }, scene, false);
+            const wallCtx = wallTexture.getContext();
+
+            wallCtx.fillStyle = "#0a192f";
+            wallCtx.fillRect(0, 0, 256, 256);
+
+            wallCtx.strokeStyle = "#00d2ff";
+            wallCtx.lineWidth = 8;
+            wallCtx.strokeRect(4, 4, 248, 248);
+
+            wallCtx.lineWidth = 4;
+            wallCtx.beginPath();
+            wallCtx.moveTo(128, 0); wallCtx.lineTo(128, 256);
+            wallCtx.moveTo(0, 128); wallCtx.lineTo(256, 128);
+            wallCtx.stroke();
+            wallTexture.update();
+
+            const wallMaterial = new BABYLON.StandardMaterial("wallMat", scene);
+            wallMaterial.diffuseTexture = wallTexture;
+            wallMaterial.emissiveTexture = wallTexture;
+            wallMaterial.emissiveColor = new BABYLON.Color3(0.3, 0.6, 0.9);
+
+            const floorMaterial = new BABYLON.StandardMaterial("floorMat", scene);
+            floorMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.15);
 
             // --- MAZE SETUP ---
             const mazeMap = [
@@ -254,12 +326,6 @@
                 [1,0,0,0,0,0,0,0,0,0,0,1],
                 [1,1,1,1,1,1,1,1,1,1,1,1]
             ];
-
-            const wallMaterial = new BABYLON.StandardMaterial("wallMat", scene);
-            wallMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.45, 0.85);
-
-            const floorMaterial = new BABYLON.StandardMaterial("floorMat", scene);
-            floorMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.2, 0.2);
 
             const blockSize = 2;
             for (let row = 0; row < mazeMap.length; row++) {
