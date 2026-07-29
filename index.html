@@ -2,597 +2,344 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Paintball 5v5 FPS</title>
-    <!-- Babylon.js CDN -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Faceball Web Prototype</title>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <style>
         html, body {
+            overflow: hidden;
             width: 100%;
             height: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: none;
         }
-
         #renderCanvas {
             width: 100%;
             height: 100%;
-            display: block;
+            touch-action: none;
         }
-
-        /* HUD UI */
-        #hud {
-            position: absolute;
-            top: 15px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 20px;
-            background: rgba(0, 0, 0, 0.65);
-            padding: 10px 25px;
-            border-radius: 25px;
-            color: #fff;
-            font-size: 18px;
-            font-weight: bold;
-            pointer-events: none;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-            z-index: 10;
-        }
-
-        .team-red { color: #ff4d4d; }
-        .team-blue { color: #4d94ff; }
-
-        #playerMsg {
-            position: absolute;
-            top: 70px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #fff;
-            font-size: 16px;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 5px 15px;
-            border-radius: 12px;
-            pointer-events: none;
-            z-index: 10;
-        }
-
         #crosshair {
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 12px;
-            height: 12px;
+            width: 16px;
+            height: 16px;
+            background-color: transparent;
             border: 2px solid rgba(255, 255, 255, 0.8);
             border-radius: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none;
             z-index: 10;
         }
-
-        #crosshair::after {
-            content: '';
+        #hud {
             position: absolute;
-            top: 4px;
-            left: 4px;
-            width: 4px;
-            height: 4px;
-            background: white;
-            border-radius: 50%;
-        }
-
-        /* Mobile Controls */
-        .touch-zone {
-            position: absolute;
-            bottom: 0;
-            width: 50%;
-            height: 60%;
-            z-index: 5;
-        }
-        #leftTouchZone { left: 0; }
-        #rightTouchZone { right: 0; }
-
-        #fireBtn {
-            position: absolute;
-            bottom: 40px;
-            right: 40px;
-            width: 80px;
-            height: 80px;
-            background: rgba(230, 50, 50, 0.75);
-            border: 3px solid #fff;
-            border-radius: 50%;
-            color: white;
+            top: 15px;
+            left: 15px;
+            color: #00ff00;
+            font-family: monospace;
             font-size: 18px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 20;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-            touch-action: manipulation;
-        }
-        #fireBtn:active { background: rgba(255, 80, 80, 0.95); transform: scale(0.95); }
-
-        #desktopHint {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            color: rgba(255,255,255,0.7);
-            font-size: 13px;
+            text-shadow: 0 0 5px #00ff00;
             pointer-events: none;
+            z-index: 10;
         }
     </style>
 </head>
 <body>
-
     <canvas id="renderCanvas"></canvas>
-
-    <div id="hud">
-        <div class="team-red">RED: <span id="scoreRed">0</span></div>
-        <div>|</div>
-        <div class="team-blue">BLUE: <span id="scoreBlue">0</span></div>
-    </div>
-    <div id="playerMsg">Assigned to: <span id="userTeamText">...</span></div>
     <div id="crosshair"></div>
-    <div id="desktopHint">Click screen to lock mouse. WASD = Move | Space / Left Click = Shoot</div>
-
-    <!-- Mobile Touch Overlays -->
-    <div id="leftTouchZone" class="touch-zone"></div>
-    <div id="rightTouchZone" class="touch-zone"></div>
-    <div id="fireBtn">FIRE</div>
+    <div id="hud">
+        HP: <span id="hp">100</span> | ENEMIES: <span id="enemy-count">2</span>
+    </div>
 
     <script>
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true);
 
-        // Game Configuration & State
-        const ARENA_SIZE = 70;
-        let score = { RED: 0, BLUE: 0 };
-        const userTeam = Math.random() < 0.5 ? "RED" : "BLUE";
-        
-        document.getElementById("userTeamText").innerText = userTeam;
-        document.getElementById("userTeamText").className = userTeam === "RED" ? "team-red" : "team-blue";
+        let playerHealth = 100;
+        const hpEl = document.getElementById("hp");
+        const countEl = document.getElementById("enemy-count");
 
-        // Mobile touch variables
-        let moveTouchId = null, lookTouchId = null;
-        let moveStartPos = { x: 0, y: 0 }, moveCurrentPos = { x: 0, y: 0 };
-        let lookLastPos = { x: 0, y: 0 };
-        let touchMoveVector = new BABYLON.Vector3(0, 0, 0);
+        // --- ENEMY CLASS ---
+        class Enemy {
+            constructor(scene, camera, type, position) {
+                this.scene = scene;
+                this.camera = camera;
+                this.type = type; // "Gremlin" or "Ishootus"
+                this.health = type === "Ishootus" ? 3 : 1;
+                this.isDead = false;
+                this.lastShotTime = 0;
 
-        const createScene = () => {
-            const scene = new BABYLON.Scene(engine);
-            scene.gravity = new BABYLON.Vector3(0, -9.81, 0);
-            scene.collisionsEnabled = true;
+                // Create Mesh
+                this.mesh = BABYLON.MeshBuilder.CreateSphere(type, { diameter: 1.5 }, scene);
+                this.mesh.position = position.clone();
+                this.mesh.checkCollisions = true;
 
-            // Lighting
-            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
-            light.intensity = 0.75;
-            const dirLight = new BABYLON.DirectionalLight("dirLight", new BABYLON.Vector3(-1, -2, -1), scene);
-            dirLight.position = new BABYLON.Vector3(30, 50, 20);
-            dirLight.intensity = 0.5;
-
-            // Materials
-            const matGround = new BABYLON.StandardMaterial("matGround", scene);
-            matGround.diffuseColor = new BABYLON.Color3(0.2, 0.45, 0.2); // Grass green
-
-            const matWall = new BABYLON.StandardMaterial("matWall", scene);
-            matWall.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.55);
-
-            const matCover = new BABYLON.StandardMaterial("matCover", scene);
-            matCover.diffuseColor = new BABYLON.Color3(0.7, 0.5, 0.3); // Wood/Crate brown
-
-            const matRed = new BABYLON.StandardMaterial("matRed", scene);
-            matRed.diffuseColor = new BABYLON.Color3(0.9, 0.15, 0.15);
-
-            const matBlue = new BABYLON.StandardMaterial("matBlue", scene);
-            matBlue.diffuseColor = new BABYLON.Color3(0.15, 0.45, 0.95);
-
-            // Arena Ground
-            const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: ARENA_SIZE, height: ARENA_SIZE }, scene);
-            ground.material = matGround;
-            ground.checkCollisions = true;
-
-            // Outer Boundary Walls
-            const wallThickness = 2;
-            const wallHeight = 8;
-            const wallData = [
-                { width: ARENA_SIZE, height: wallHeight, depth: wallThickness, pos: new BABYLON.Vector3(0, wallHeight/2, ARENA_SIZE/2) },
-                { width: ARENA_SIZE, height: wallHeight, depth: wallThickness, pos: new BABYLON.Vector3(0, wallHeight/2, -ARENA_SIZE/2) },
-                { width: wallThickness, height: wallHeight, depth: ARENA_SIZE, pos: new BABYLON.Vector3(ARENA_SIZE/2, wallHeight/2, 0) },
-                { width: wallThickness, height: wallHeight, depth: ARENA_SIZE, pos: new BABYLON.Vector3(-ARENA_SIZE/2, wallHeight/2, 0) }
-            ];
-
-            const obstacleMeshes = [];
-            wallData.forEach((w, i) => {
-                const wall = BABYLON.MeshBuilder.CreateBox("wall_" + i, { width: w.width, height: w.height, depth: w.depth }, scene);
-                wall.position = w.pos;
-                wall.material = matWall;
-                wall.checkCollisions = true;
-                obstacleMeshes.push(wall);
-            });
-
-            // Random Cover & Obstacles
-            const createObstacle = (x, z, sx, sy, sz) => {
-                const box = BABYLON.MeshBuilder.CreateBox("cover", { width: sx, height: sy, depth: sz }, scene);
-                box.position = new BABYLON.Vector3(x, sy / 2, z);
-                box.material = matCover;
-                box.checkCollisions = true;
-                obstacleMeshes.push(box);
-            };
-
-            // Layout Obstacles
-            const obstacleLayout = [
-                {x: 0, z: 0, w: 8, h: 4, d: 8},
-                {x: -12, z: 10, w: 4, h: 3, d: 10},
-                {x: 12, z: -10, w: 4, h: 3, d: 10},
-                {x: -15, z: -15, w: 6, h: 3, d: 6},
-                {x: 15, z: 15, w: 6, h: 3, d: 6},
-                {x: -20, z: 5, w: 8, h: 4, d: 3},
-                {x: 20, z: -5, w: 8, h: 4, d: 3},
-                {x: 0, z: 22, w: 12, h: 3, d: 3},
-                {x: 0, z: -22, w: 12, h: 3, d: 3}
-            ];
-            obstacleLayout.forEach(o => createObstacle(o.x, o.z, o.w, o.h, o.d));
-
-            // Player Setup
-            const camera = new BABYLON.UniversalCamera("camera", new BABYLON.Vector3(0, 1.7, 0), scene);
-            camera.fov = 1.1;
-            camera.minZ = 0.1;
-            camera.attachControl(canvas, true);
-            camera.applyGravity = true;
-            camera.checkCollisions = true;
-            camera.ellipsoid = new BABYLON.Vector3(0.8, 0.85, 0.8);
-
-            // Controls configuration
-            camera.keysUp.push(87);    // W
-            camera.keysDown.push(83);  // S
-            camera.keysLeft.push(65);  // A
-            camera.keysRight.push(68); // D
-            camera.speed = 0.55;
-
-            // Player Gun Mesh
-            const gun = BABYLON.MeshBuilder.CreateBox("gun", { width: 0.12, height: 0.12, depth: 0.6 }, scene);
-            gun.parent = camera;
-            gun.position = new BABYLON.Vector3(0.2, -0.25, 0.5);
-            const matGun = new BABYLON.StandardMaterial("matGun", scene);
-            matGun.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
-            gun.material = matGun;
-
-            // Players Array & Spawning
-            const players = [];
-
-            class Player {
-                constructor(id, team, isUser = false) {
-                    this.id = id;
-                    this.team = team;
-                    this.isUser = isUser;
-                    this.isAlive = true;
-                    this.cooldown = 0;
-
-                    // Mesh representation
-                    this.mesh = BABYLON.MeshBuilder.CreateCapsule("p_" + id, { radius: 0.6, height: 1.8 }, scene);
-                    this.mesh.material = team === "RED" ? matRed : matBlue;
-                    this.mesh.checkCollisions = true;
-
-                    // Marker Visor
-                    const visor = BABYLON.MeshBuilder.CreateBox("visor", { width: 0.5, height: 0.2, depth: 0.3 }, scene);
-                    visor.parent = this.mesh;
-                    visor.position = new BABYLON.Vector3(0, 0.5, 0.3);
-
-                    if (isUser) {
-                        this.mesh.isVisible = false; // Hide body for first person view
-                        visor.isVisible = false;
-                    }
-
-                    this.respawn();
+                // Visuals based on enemy type
+                const mat = new BABYLON.StandardMaterial(type + "Mat", scene);
+                if (type === "Gremlin") {
+                    mat.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2); // Fast Red Enemy
+                    this.speed = 0.06;
+                } else if (type === "Ishootus") {
+                    mat.diffuseColor = new BABYLON.Color3(0.2, 1, 0.2); // Green Shooting Enemy
+                    this.speed = 0.03;
                 }
+                this.mesh.material = mat;
 
-                respawn() {
-                    this.isAlive = true;
-                    this.mesh.setEnabled(true);
+                // Attach update loop for AI logic
+                this.observer = this.scene.onBeforeRenderObservable.add(() => this.update());
+            }
 
-                    const spawnZ = this.team === "RED" ? -30 : 30;
-                    const spawnX = (Math.random() - 0.5) * 40;
+            update() {
+                if (this.isDead) return;
+
+                // Calculate vector pointing from enemy to player
+                const playerPos = this.camera.position.clone();
+                playerPos.y = this.mesh.position.y; // Keep movement on horizontal plane
+                
+                const direction = playerPos.subtract(this.mesh.position);
+                const distance = direction.length();
+                direction.normalize();
+
+                // Aggro range check (within 16 units)
+                if (distance < 16) {
+                    this.mesh.lookAt(this.camera.position);
+
+                    if (this.type === "Gremlin") {
+                        // Fast melee enemy runs straight at player
+                        this.mesh.position.addInPlace(direction.scale(this.speed));
+                        
+                        // Melee attack range
+                        if (distance < 1.2) {
+                            damagePlayer(0.5);
+                        }
+                    } else if (this.type === "Ishootus") {
+                        // Shooter keeps a distance (~7 units) and shoots
+                        if (distance > 7) {
+                            this.mesh.position.addInPlace(direction.scale(this.speed));
+                        }
+                        this.tryShoot(direction, distance);
+                    }
+                }
+            }
+
+            tryShoot(direction, distance) {
+                const now = Date.now();
+                if (now - this.lastShotTime > 2000 && distance < 14) {
+                    this.lastShotTime = now;
+
+                    const eBullet = BABYLON.MeshBuilder.CreateSphere("eBullet", { diameter: 0.3 }, this.scene);
+                    eBullet.position = this.mesh.position.clone();
                     
-                    this.mesh.position = new BABYLON.Vector3(spawnX, 0.9, spawnZ);
+                    const eMat = new BABYLON.StandardMaterial("eMat", this.scene);
+                    eMat.diffuseColor = new BABYLON.Color3(1, 0, 0);
+                    eMat.emissiveColor = new BABYLON.Color3(1, 0, 0);
+                    eBullet.material = eMat;
 
-                    if (this.isUser) {
-                        camera.position = new BABYLON.Vector3(spawnX, 1.7, spawnZ);
-                        camera.rotation = new BABYLON.Vector3(0, this.team === "RED" ? 0 : Math.PI, 0);
-                    }
-                }
+                    const bulletSpeed = 0.25;
+                    const bObs = this.scene.onBeforeRenderObservable.add(() => {
+                        eBullet.position.addInPlace(direction.scale(bulletSpeed));
 
-                takeHit(paintColor) {
-                    if (!this.isAlive) return;
-                    this.isAlive = false;
+                        if (BABYLON.Vector3.Distance(eBullet.position, this.camera.position) < 1.0) {
+                            damagePlayer(10);
+                            eBullet.dispose();
+                            this.scene.onBeforeRenderObservable.remove(bObs);
+                        }
+                    });
 
-                    // Update Score
-                    const scoringTeam = this.team === "RED" ? "BLUE" : "RED";
-                    score[scoringTeam]++;
-                    document.getElementById("scoreRed").innerText = score.RED;
-                    document.getElementById("scoreBlue").innerText = score.BLUE;
-
-                    this.mesh.setEnabled(false);
-
-                    // Auto Respawn after 3s
                     setTimeout(() => {
-                        this.respawn();
+                        if (!eBullet.isDisposed()) {
+                            eBullet.dispose();
+                            this.scene.onBeforeRenderObservable.remove(bObs);
+                        }
                     }, 3000);
                 }
             }
 
-            // Create 5v5 teams
-            let userCreated = false;
-            for (let i = 0; i < 10; i++) {
-                const team = i < 5 ? "RED" : "BLUE";
-                let isUser = false;
-                
-                if (!userCreated && team === userTeam && (i % 5 === 0 || Math.random() < 0.3 || i === 4)) {
-                    isUser = true;
-                    userCreated = true;
+            takeDamage(amount) {
+                this.health -= amount;
+                if (this.health <= 0) {
+                    this.die();
                 }
-
-                players.push(new Player(i, team, isUser));
             }
 
-            // Find reference to active user player object
-            const userPlayer = players.find(p => p.isUser);
+            die() {
+                this.isDead = true;
+                this.scene.onBeforeRenderObservable.remove(this.observer);
+                this.mesh.dispose();
+            }
+        }
 
-            // Paintball Shooting Mechanic
-            const paintballs = [];
+        function damagePlayer(amount) {
+            playerHealth = Math.max(0, Math.round(playerHealth - amount));
+            hpEl.textContent = playerHealth;
+            if (playerHealth <= 0) {
+                alert("Game Over! Smiloids defeated you.");
+                location.reload();
+            }
+        }
 
-            const shootPaintball = (origin, direction, shooterTeam) => {
-                const pb = BABYLON.MeshBuilder.CreateSphere("pb", { diameter: 0.25 }, scene);
-                pb.position = origin.clone();
-                
-                const pbMat = new BABYLON.StandardMaterial("pbMat", scene);
-                pbMat.diffuseColor = shooterTeam === "RED" ? new BABYLON.Color3(1, 0.1, 0.1) : new BABYLON.Color3(0.1, 0.5, 1);
-                pb.material = pbMat;
+        // --- SCENE SETUP ---
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color3(0.05, 0.05, 0.1);
+            
+            scene.gravity = new BABYLON.Vector3(0, -9.81, 0);
+            scene.collisionsEnabled = true;
 
-                paintballs.push({
-                    mesh: pb,
-                    dir: direction.normalize().scale(1.2),
-                    team: shooterTeam,
-                    life: 60 // frames
-                });
-            };
+            // Light
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.8;
 
-            // Player Shoot Action
-            const triggerUserShoot = () => {
-                if (!userPlayer.isAlive || userPlayer.cooldown > 0) return;
-                userPlayer.cooldown = 12; // Cooldown frames
+            // Camera setup
+            const camera = new BABYLON.UniversalCamera("fpsCamera", new BABYLON.Vector3(3, 1, 3), scene);
+            camera.setTarget(new BABYLON.Vector3(3, 1, 10));
+            camera.attachControl(canvas, true);
+            
+            camera.keysUp.push(87);    // W
+            camera.keysDown.push(83);  // S
+            camera.keysLeft.push(65);  // A
+            camera.keysRight.push(68); // D
+            
+            camera.checkCollisions = true;
+            camera.applyGravity = true;
+            camera.ellipsoid = new BABYLON.Vector3(0.5, 1, 0.5);
+            camera.speed = 0.15;
 
-                const shootDir = camera.getForwardRay().direction;
-                const shootOrigin = camera.position.add(shootDir.scale(0.5));
-                shootPaintball(shootOrigin, shootDir, userPlayer.team);
-            };
+            // --- VIRTUAL JOYSTICKS (MOBILE CONTROLS) ---
+            const leftJoystick = new BABYLON.VirtualJoystick(true);
+            leftJoystick.setJoystickColor("yellow");
+            
+            const rightJoystick = new BABYLON.VirtualJoystick(false);
+            rightJoystick.setJoystickColor("cyan");
 
-            // Splat Decal Effect on hit
-            const createSplat = (pos, color) => {
-                const splat = BABYLON.MeshBuilder.CreateDisc("splat", { radius: 0.35 + Math.random() * 0.25 }, scene);
-                splat.position = pos;
-                splat.rotation.x = Math.PI / 2;
-                splat.position.y = 0.02; // Slightly above ground
-                
-                const splatMat = new BABYLON.StandardMaterial("splatMat", scene);
-                splatMat.diffuseColor = color;
-                splat.material = splatMat;
-
-                // Fade out splat after 10 seconds
-                setTimeout(() => splat.dispose(), 10000);
-            };
-
-            // Game Loop: Paintball Physics & AI Behavior
+            const joystickSpeed = 0.08;
+            const lookSpeed = 0.04;
+            
             scene.onBeforeRenderObservable.add(() => {
-                // Keep User Player position synchronized with camera
-                if (userPlayer.isAlive) {
-                    userPlayer.mesh.position.x = camera.position.x;
-                    userPlayer.mesh.position.z = camera.position.z;
-                    userPlayer.mesh.position.y = camera.position.y - 0.8;
-                }
-
-                // Decrement Cooldowns
-                players.forEach(p => { if (p.cooldown > 0) p.cooldown--; });
-
-                // Update Mobile Movement Input
-                if (touchMoveVector.lengthSquared() > 0) {
-                    const forward = camera.getForwardRay().direction;
-                    forward.y = 0;
+                if (leftJoystick.pressed) {
+                    const forward = camera.getDirection(BABYLON.Vector3.Forward());
+                    const right = camera.getDirection(BABYLON.Vector3.Right());
+                    
+                    forward.y = 0; 
+                    right.y = 0;
                     forward.normalize();
-
-                    const right = BABYLON.Vector3.Cross(BABYLON.Axis.Y, forward).normalize();
-
-                    const moveDir = forward.scale(-touchMoveVector.y).add(right.scale(touchMoveVector.x));
-                    camera.position.addInPlace(moveDir.scale(0.2));
+                    right.normalize();
+                    
+                    const moveZ = forward.scale(leftJoystick.deltaPosition.y * joystickSpeed);
+                    const moveX = right.scale(leftJoystick.deltaPosition.x * joystickSpeed);
+                    
+                    camera.position.addInPlace(moveZ);
+                    camera.position.addInPlace(moveX);
                 }
 
-                // Update Paintballs
-                for (let i = paintballs.length - 1; i >= 0; i--) {
-                    const pb = paintballs[i];
-                    pb.mesh.position.addInPlace(pb.dir);
-                    pb.life--;
+                if (rightJoystick.pressed) {
+                    camera.rotation.y += rightJoystick.deltaPosition.x * lookSpeed;
+                    camera.rotation.x += rightJoystick.deltaPosition.y * lookSpeed;
+                    camera.rotation.x = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, camera.rotation.x));
+                }
+            });
 
-                    let hit = false;
+            // --- MAZE SETUP ---
+            const mazeMap = [
+                [1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,0,0,1,0,0,0,0,0,0,1],
+                [1,0,1,0,1,0,1,1,1,1,0,1],
+                [1,0,1,0,0,0,0,0,0,1,0,1],
+                [1,0,1,1,1,1,0,1,0,1,0,1],
+                [1,0,0,0,0,0,0,1,0,0,0,1],
+                [1,1,1,0,1,1,1,1,1,1,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1]
+            ];
 
-                    // Collision check with Players
-                    for (let p of players) {
-                        if (p.isAlive && p.team !== pb.team) {
-                            const dist = BABYLON.Vector3.Distance(pb.mesh.position, p.mesh.position);
-                            if (dist < 0.9) {
-                                p.takeHit(pb.mesh.material.diffuseColor);
-                                hit = true;
-                                break;
-                            }
-                        }
-                    }
+            const wallMaterial = new BABYLON.StandardMaterial("wallMat", scene);
+            wallMaterial.diffuseColor = new BABYLON.Color3(0.15, 0.45, 0.85);
 
-                    // Collision with Arena / Cover
-                    if (!hit) {
-                        for (let obs of obstacleMeshes) {
-                            if (pb.mesh.intersectsMesh(obs, false)) {
-                                createSplat(pb.mesh.position.clone(), pb.mesh.material.diffuseColor);
-                                hit = true;
-                                break;
-                            }
-                        }
-                    }
+            const floorMaterial = new BABYLON.StandardMaterial("floorMat", scene);
+            floorMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.2, 0.2);
 
-                    // Ground hit
-                    if (!hit && pb.mesh.position.y <= 0.1) {
-                        createSplat(pb.mesh.position.clone(), pb.mesh.material.diffuseColor);
-                        hit = true;
-                    }
-
-                    if (hit || pb.life <= 0) {
-                        pb.mesh.dispose();
-                        paintballs.splice(i, 1);
+            const blockSize = 2;
+            for (let row = 0; row < mazeMap.length; row++) {
+                for (let col = 0; col < mazeMap[row].length; col++) {
+                    if (mazeMap[row][col] === 1) {
+                        const wall = BABYLON.MeshBuilder.CreateBox("wall", { size: blockSize }, scene);
+                        wall.position = new BABYLON.Vector3(col * blockSize, blockSize / 2, row * blockSize);
+                        wall.material = wallMaterial;
+                        wall.checkCollisions = true;
                     }
                 }
+            }
 
-                // Simple AI Logic for Non-User Players
-                players.forEach(p => {
-                    if (p.isUser || !p.isAlive) return;
+            const floor = BABYLON.MeshBuilder.CreateGround("floor", { width: 40, height: 40 }, scene);
+            floor.position = new BABYLON.Vector3(12, 0, 8);
+            floor.material = floorMaterial;
+            floor.checkCollisions = true;
 
-                    // Find closest enemy
-                    let closestEnemy = null;
-                    let minDist = 999;
-                    players.forEach(enemy => {
-                        if (enemy.team !== p.team && enemy.isAlive) {
-                            const d = BABYLON.Vector3.Distance(p.mesh.position, enemy.mesh.position);
-                            if (d < minDist) {
-                                minDist = d;
-                                closestEnemy = enemy;
+            // --- SPAWN ENEMIES ---
+            const enemies = [];
+            enemies.push(new Enemy(scene, camera, "Gremlin", new BABYLON.Vector3(14, 1, 4)));
+            enemies.push(new Enemy(scene, camera, "Ishootus", new BABYLON.Vector3(18, 1, 12)));
+
+            // --- SHOOTING MECHANIC ---
+            document.addEventListener("pointerdown", function (evt) {
+                if (evt.pointerType === "mouse" && !engine.isPointerLock) {
+                    engine.enterPointerlock();
+                }
+
+                const bullet = BABYLON.MeshBuilder.CreateSphere("bullet", { diameter: 0.2 }, scene);
+                bullet.position = camera.position.clone();
+                
+                const bMat = new BABYLON.StandardMaterial("bMat", scene);
+                bMat.diffuseColor = new BABYLON.Color3(1, 1, 0);
+                bMat.emissiveColor = new BABYLON.Color3(1, 1, 0);
+                bullet.material = bMat;
+                
+                const forward = camera.getDirection(BABYLON.Vector3.Forward());
+                const speed = 0.5;
+
+                const observer = scene.onBeforeRenderObservable.add(() => {
+                    bullet.position.addInPlace(forward.scale(speed));
+                    
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        const enemy = enemies[i];
+                        if (!enemy.isDead && bullet.intersectsMesh(enemy.mesh, false)) {
+                            enemy.takeDamage(1);
+                            bullet.dispose();
+                            scene.onBeforeRenderObservable.remove(observer);
+                            
+                            if (enemy.isDead) {
+                                enemies.splice(i, 1);
+                                countEl.textContent = enemies.length;
+                                if (enemies.length === 0) {
+                                    setTimeout(() => alert("Victory! CyberScape stage clear."), 100);
+                                }
                             }
-                        }
-                    });
-
-                    if (closestEnemy) {
-                        // Look at enemy
-                        const targetPos = closestEnemy.mesh.position.clone();
-                        p.mesh.lookAt(targetPos);
-
-                        // Move towards enemy if far, or strafe
-                        if (minDist > 12) {
-                            const moveDir = targetPos.subtract(p.mesh.position).normalize().scale(0.08);
-                            p.mesh.position.addInPlace(moveDir);
-                        }
-
-                        // Shoot at enemy if aligned and cooldown off
-                        if (minDist < 25 && p.cooldown <= 0 && Math.random() < 0.05) {
-                            p.cooldown = 45 + Math.floor(Math.random() * 30);
-                            const shootDir = targetPos.subtract(p.mesh.position).normalize();
-                            shootDir.y += 0.05; // Slightly aim up
-                            shootPaintball(p.mesh.position.add(new BABYLON.Vector3(0, 0.5, 0)), shootDir, p.team);
+                            break;
                         }
                     }
                 });
-            });
 
-            // Input Event Listeners (Desktop & Mobile)
-            window.addEventListener("keydown", (e) => {
-                if (e.code === "Space") triggerUserShoot();
-            });
-
-            canvas.addEventListener("pointerdown", (e) => {
-                if (!engine.isPointerLock) {
-                    canvas.requestPointerLock();
-                } else if (e.button === 0) {
-                    triggerUserShoot();
-                }
-            });
-
-            // Mobile Touch Event Handling
-            const leftZone = document.getElementById("leftTouchZone");
-            const rightZone = document.getElementById("rightTouchZone");
-            const fireBtn = document.getElementById("fireBtn");
-
-            fireBtn.addEventListener("touchstart", (e) => {
-                e.preventDefault();
-                triggerUserShoot();
-            });
-
-            leftZone.addEventListener("touchstart", (e) => {
-                e.preventDefault();
-                const touch = e.changedTouches[0];
-                moveTouchId = touch.identifier;
-                moveStartPos = { x: touch.clientX, y: touch.clientY };
-            });
-
-            leftZone.addEventListener("touchmove", (e) => {
-                e.preventDefault();
-                for (let touch of e.changedTouches) {
-                    if (touch.identifier === moveTouchId) {
-                        const dx = touch.clientX - moveStartPos.x;
-                        const dy = touch.clientY - moveStartPos.y;
-                        const dist = Math.min(Math.hypot(dx, dy), 50);
-                        const angle = Math.atan2(dy, dx);
-                        
-                        touchMoveVector.x = (Math.cos(angle) * dist) / 50;
-                        touchMoveVector.y = (Math.sin(angle) * dist) / 50;
+                setTimeout(() => { 
+                    if (!bullet.isDisposed()) {
+                        bullet.dispose(); 
+                        scene.onBeforeRenderObservable.remove(observer);
                     }
-                }
+                }, 2000);
             });
-
-            const endMove = (e) => {
-                for (let touch of e.changedTouches) {
-                    if (touch.identifier === moveTouchId) {
-                        moveTouchId = null;
-                        touchMoveVector.set(0, 0, 0);
-                    }
-                }
-            };
-            leftZone.addEventListener("touchend", endMove);
-            leftZone.addEventListener("touchcancel", endMove);
-
-            rightZone.addEventListener("touchstart", (e) => {
-                e.preventDefault();
-                const touch = e.changedTouches[0];
-                lookTouchId = touch.identifier;
-                lookLastPos = { x: touch.clientX, y: touch.clientY };
-            });
-
-            rightZone.addEventListener("touchmove", (e) => {
-                e.preventDefault();
-                for (let touch of e.changedTouches) {
-                    if (touch.identifier === lookTouchId) {
-                        const dx = touch.clientX - lookLastPos.x;
-                        const dy = touch.clientY - lookLastPos.y;
-                        
-                        camera.rotation.y += dx * 0.005;
-                        camera.rotation.x += dy * 0.005;
-
-                        // Clamp vertical pitch rotation
-                        camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.rotation.x));
-
-                        lookLastPos = { x: touch.clientX, y: touch.clientY };
-                    }
-                }
-            });
-
-            const endLook = (e) => {
-                for (let touch of e.changedTouches) {
-                    if (touch.identifier === lookTouchId) {
-                        lookTouchId = null;
-                    }
-                }
-            };
-            rightZone.addEventListener("touchend", endLook);
-            rightZone.addEventListener("touchcancel", endLook);
 
             return scene;
         };
 
         const scene = createScene();
 
-        engine.runRenderLoop(() => {
+        engine.runRenderLoop(function () {
             scene.render();
         });
 
-        window.addEventListener("resize", () => {
+        window.addEventListener("resize", function () {
             engine.resize();
         });
     </script>
